@@ -1,4 +1,4 @@
-name: Build mssh final ZIP
+name: Build mssh customer release
 
 on:
   push:
@@ -50,23 +50,53 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Prepare private signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MSSH_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MSSH_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MSSH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MSSH_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing signing secret: $name. See RELEASE-1.0.0.md."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mssh-release.p12"
       - name: Compile, test and lint
         working-directory: final-source
+        env:
+          MSSH_KEYSTORE_PATH: ${{ runner.temp }}/mssh-release.p12
+          MSSH_STORE_PASSWORD: ${{ secrets.MSSH_STORE_PASSWORD }}
+          MSSH_KEY_ALIAS: ${{ secrets.MSSH_KEY_ALIAS }}
+          MSSH_KEY_PASSWORD: ${{ secrets.MSSH_KEY_PASSWORD }}
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Verify release signature
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs final-source/app/build/outputs/apk/release/app-release.apk
       - name: APK checksum
-        working-directory: final-source/app/build/outputs/apk/debug
-        run: sha256sum *.apk > SHA256SUMS.txt
+        working-directory: final-source/app/build/outputs/apk/release
+        run: |
+          mv app-release.apk mssh-1.0.0.apk
+          sha256sum mssh-1.0.0.apk > SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: mssh-final-debug
+          name: mssh-1.0.0-release
           path: |
-            final-source/app/build/outputs/apk/debug/*.apk
-            final-source/app/build/outputs/apk/debug/SHA256SUMS.txt
+            final-source/app/build/outputs/apk/release/mssh-1.0.0.apk
+            final-source/app/build/outputs/apk/release/SHA256SUMS.txt
           if-no-files-found: error
+      - name: Remove private signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/mssh-release.p12"
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
