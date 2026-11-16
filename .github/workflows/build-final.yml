@@ -3,7 +3,7 @@ name: Build mssh customer release
 on:
   push:
     paths:
-      - 'mssh-final-auto.zip'
+      - 'mssh-ssh-account-display.zip'
       - '.github/workflows/build-final.yml'
   workflow_dispatch:
 
@@ -27,7 +27,7 @@ jobs:
           from zipfile import ZipFile
           root = Path('final-source').resolve()
           root.mkdir()
-          with ZipFile('mssh-final-auto.zip') as z:
+          with ZipFile('mssh-ssh-account-display.zip') as z:
               for item in z.infolist():
                   if not (root / item.filename).resolve().is_relative_to(root):
                       raise ValueError('Unsafe ZIP path')
